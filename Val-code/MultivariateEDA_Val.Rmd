@@ -1,0 +1,280 @@
+---
+title: "MultivariateEDA_G4"
+author: "MLDS Group 4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.asp = 1)
+
+# Check if libraries are installed, if not install them
+if (!require(tidyverse)) install.packages("tidyve")
+library(tidyverse)
+
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+
+if (!require(corrplot)) install.packages("corrplot")
+library(corrplot)
+
+if (!require(dplyr)) install.packages("dplyr")
+library(dplyr)
+
+if (!require(GGally)) install.packages("GGally")
+library(GGally)
+
+if (!require(zoo)) install.packages("zoo")
+library(zoo)
+
+if (!require(patchwork)) install.packages("patchwork")
+library(patchwork)
+
+```
+
+# 1. Load .csv data
+
+```{r}
+# Read in energy demand data
+ed <- read_csv("energy_demand_uk.csv", show_col_types = FALSE) %>% select(-1)  
+
+# Ensure date column is Date type
+ed <- ed %>%
+  mutate(date = as.Date(date))
+
+```
+
+# 2. Data Exploration
+## Shape of data
+```{r}
+# dimensions of data
+cat("Number of rows:", nrow(ed), "\n")
+cat("Number of columns:", ncol(ed), "\n")
+```
+
+## Data summary
+```{r}
+cat("Summary of data")
+summary(ed)
+```
+
+## Preview data
+```{r}
+print("Preview of data:")
+head(ed)
+```
+# 3. Handle missing values
+## Find which rows and columns have values missing
+```{r}
+# Check and print rows with missing values
+missing_rows <- ed %>% filter(if_any(everything(), is.na))
+cat("number of missing: rows: ", nrow(missing_rows), "\n")
+
+# Check which columns have missing values
+missing_cols <- names(row)[which(is.na(row))]
+cat("Missing values in columns:", paste(missing_cols, collapse = ", "), "\n")
+
+# Visualizing missing rows
+print(missing_rows)
+
+```
+
+## Only 29/02 has missing values: min_temp, max_temp, rain_mm, wind_speed 
+## forward fill missing values
+```{r}
+# Forward fill missing values
+ed <- na.locf(ed)
+```
+
+# 4. Univariate EDA @Jas
+# 5.1. Multivariate EDA: Original Features explorations
+## Time Series plot of all variables and 30 day MA
+```{r, fig.width=12, fig.height=6, message=FALSE, warning=FALSE}
+
+# Remove cols not wanted
+exclude_cols <- c("national_demand", "date")
+columns_to_consider <- setdiff(names(ed), exclude_cols)
+
+# Select what MA to plot
+MA_TIME <- 30
+
+# Create list of ggplots
+plot_list <- lapply(columns_to_consider, function(col) {
+  ggplot(ed, aes(x = date, y = .data[[col]])) +
+    geom_line(color = "blue", linewidth = 1.2) +
+    geom_line(aes(y = rollmean(.data[[col]], k=MA_TIME, fill = NA)), color = "red", linewidth = 1.2) +
+    labs(title = col, x = "Date", y = col) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 8))
+})
+
+# Combine all plots into a grid layout
+combined_plot <- wrap_plots(plot_list) +
+  plot_annotation(title = "Time Series with 30-Day Moving Average")
+
+# Print the combined plot
+print(combined_plot)
+
+```
+
+## Correlations to original Features only
+```{r, message=FALSE, warning=FALSE}
+# Calculate Spearman correlation for selected columns
+correlations <- sapply(ed[columns_to_consider], 
+                       function(column) cor(column, ed$national_demand, method = "spearman"))
+
+print(correlations)
+```
+
+## Plot national_demand correlation to original Features only
+```{r}
+# Convert correlations to data frame for plotting
+correlations_df <- data.frame(
+  feature = names(correlations),
+  correlation = as.numeric(correlations)
+)
+
+# Plot it
+ggplot(correlations_df, aes(x = correlation, y = reorder(feature, correlation), fill = correlation > 0)) +
+  geom_bar(stat = "identity", fill="salmon") +
+  theme_minimal() +
+  labs(
+    title = "Correlation with National Demand (Original Features)",
+    x = "Correlation",
+    y = ""
+  ) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+
+```
+
+## Plot national_demand against Original Features
+```{r, fig.width=20, fig.height=12, message=FALSE, warning=FALSE}
+# Create list of plots
+plot_list <- lapply(columns_to_consider, function(col) {
+  ggplot(ed, aes(x = .data[[col]], y = national_demand)) +
+    geom_point(color = "black", alpha = 0.5) +  # Scatter plot
+    geom_smooth(color = "red", method = "loess", se = FALSE) +  # Smooth trend line
+    labs(title = paste(col),
+         x = col,
+         y = "National Demand") +
+    theme_minimal()
+})
+
+# Combine all plots into a grid using patchwork
+combined_plot <- wrap_plots(plot_list, ncol = 2) +
+  plot_annotation(title = "National Demand vs Features")
+
+# Show the combined plot
+print(combined_plot)
+
+```
+
+# 5.2. Multivariate EDA: Transformations and Feature Engineering @Katja
+# 5.3. Multivariate EDA: Confounding Effect - Solar Generation v. Temperature
+## It can be seen that Solar generation correlates to demand, but is it causality?
+Because temperature correlates strongly not only with demand, but also with 
+solar_generation, it is a confounder. In fact, demand is seasonal and is not
+affected by how much solar power is generated.
+ 
+```{r, message=FALSE, warning=FALSE}
+correlation <- cor(ed$solar_generation, ed$max_temp, method = "spearman")
+print(correlation)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+# Plot Solar Generation vs. Temperature
+ggplot(ed, aes(x = solar_generation, y = max_temp)) +
+geom_point(color = "black", alpha = 0.6) +
+geom_smooth(method = "lm", color = "red", se = FALSE) +
+labs(
+  title = "Solar Generation vs. Max Temperature",
+  x = "Solar Generation",
+  y = "Max Temperature"
+) +
+theme_minimal()
+
+```
+
+
+
+
+
+# 5.4 daily_temp_variation
+## calculate avg_temp, avg_temp_ma, daily_variation_avg_temp
+```{r, message=FALSE, warning=FALSE}
+# Calculate avg_temp
+ed <- ed %>%
+  mutate(avg_temp = (max_temp+min_temp)/2)
+
+# Calculate avg_temp_ma_30
+ed <- ed %>%
+  mutate(avg_temp_ma = rollmean(avg_temp, k = 30, fill = NA, align = "right"))
+
+# calculate daily_variation_avg_temp
+ed <- ed %>%
+  mutate(dail_variation_avg_temp = avg_temp - avg_temp_ma)
+```
+
+## Calculate daily variations correlation to demand - segmented by min_temperature
+```{r, message=FALSE, warning=FALSE}
+
+cold_threshold <- 5
+hot_threshold <- 13
+
+cold_days <- ed %>%
+  filter(min_temp < cold_threshold)
+
+mild_days <- ed %>%
+  filter(min_temp > cold_threshold & min_temp < hot_threshold)
+
+hot_days <- ed %>%
+  filter(min_temp > hot_threshold)
+
+# calculate correlation of demand v temperature by segment
+correlation <- cor(cold_days$dail_variation_avg_temp, cold_days$national_demand, 
+                   method="spearman", use = "complete.obs")
+print(correlation)
+
+correlation <- cor(mild_days$dail_variation_avg_temp, mild_days$national_demand, 
+                   method="pearson", use = "complete.obs")
+print(correlation)
+
+correlation <- cor(hot_days$dail_variation_avg_temp, hot_days$national_demand, 
+                   method="spearman", use = "complete.obs")
+print(correlation)
+
+```
+
+## Plot daily variations correlation to demand - segmented by min_temperature
+```{r, message=FALSE, warning=FALSE}
+# Add segmentation flags to main data frame for plotting
+ed <- ed %>%
+  mutate(day_type = case_when(
+    min_temp < cold_threshold ~ "cold_day",
+    min_temp >= cold_threshold & min_temp < hot_threshold ~ "mild_day",
+    TRUE ~ "hot_day"
+  ))
+
+# Plot
+ggplot(ed, aes(x = dail_variation_avg_temp, y = national_demand, color = day_type)) +
+  geom_point(alpha = 0.2) +  # Original points
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "National Demand vs Daily Variations in Average Temperature",
+    x = "Daily Variations in Average Temperature",
+    y = "National Demand"
+  ) +
+  scale_color_manual(values = c(
+    "cold_day" = "blue", "mild_day" = "green", "hot_day" = "red")) +
+  theme_minimal()
+
+```
+
+## During cold periods, daily temperature drops cause demand to increase
+during mild and hot days, this behaviour is not seen

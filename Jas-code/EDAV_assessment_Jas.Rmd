@@ -1,0 +1,270 @@
+---
+title: "Univariate Exploratory Data Analysis (EDA)"
+output: html_document
+---
+
+```{r}
+############## Loading the required Libary ############## 
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(zoo)
+library(forecast)
+library(lubridate)
+library(MASS)
+#install.packages("tseries")  
+library(tseries)
+
+```
+
+##Data Summary
+---
+
+```{r}
+setwd("~/Desktop/Imperial/EDAV/EDAV Assessment 2")  #Change the path to your own path plz. 
+energy_data <- read_csv("energy_demand_uk.csv")
+head(energy_data)
+summary(energy_data$national_demand)
+```
+##Checking Normality & All other types of distribution
+---
+```{r}
+########################################################
+##############  Checking Normaltiy        ##############
+########################################################
+#Using historgram
+ggplot(energy_data, aes(x = national_demand)) +
+  geom_histogram(binwidth = 1000, fill = "blue", alpha = 0.6, color = "black") +
+  labs(title = "Distribution of National Energy Demand", x = "National Demand (MW)", y = "Count") +
+  theme_minimal()
+#Using boxplot
+ggplot(energy_data, aes(y = national_demand)) +
+  geom_boxplot(fill = "red", alpha = 0.5) +
+  labs(title = "Boxplot of National Energy Demand", y = "National Demand (MW)") +
+  theme_minimal()
+#Using qq plot
+ggplot(energy_data, aes(sample = national_demand)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Q-Q Plot of National Energy Demand") +
+  theme_minimal()
+
+ggplot(energy_data, aes(x = date, y = national_demand)) +
+  geom_line(color = "blue") +
+  labs(title = "Time Series of National Energy Demand", x = "Date", y = "National Demand (MW)") +
+  theme_minimal()
+
+
+#Conclusion:
+#The national demand data does not follow normal distribution
+#So in the following steps, let's try some transformation, to see if the data can follow normal distribution after transformation
+
+
+#Used Log transformation for national_demand:
+#Using qq plot:
+qqnorm(log(energy_data$national_demand))
+qqline(log(energy_data$national_demand), col = "red")
+
+#Fitting Gamma Distribution:
+fit_gamma <- fitdistr(energy_data$national_demand, "gamma")
+print(fit_gamma)  
+shape_param <- fit_gamma$estimate["shape"]
+rate_param <- fit_gamma$estimate["rate"]
+hist(energy_data$national_demand, probability = TRUE, col = "lightblue", breaks = 30,
+     main = "Gamma Fit on National Demand", xlab = "National Demand (MW)")
+curve(dgamma(x, shape = shape_param, rate = rate_param), 
+      add = TRUE, col = "red", lwd = 2)
+ks.test(energy_data$national_demand, "pgamma", shape_param, rate_param)  #KS test 
+# p-value (0.002129) from the KS test is very small (< 0.05), we reject H0. This concludes Gamma is not a good fit for the energy data
+
+#Fitting Log Normal Distribution:
+fit_lognormal <- fitdistr(energy_data$national_demand, "lognormal")
+print(fit_lognormal)
+meanlog <- fit_lognormal$estimate["meanlog"]
+sdlog <- fit_lognormal$estimate["sdlog"]
+ks.test(energy_data$national_demand, "plnorm", meanlog, sdlog) #KS test 
+hist(energy_data$national_demand, probability = TRUE, col = "lightblue", breaks = 30,
+     main = "Log-Normal Fit on National Demand", xlab = "National Demand (MW)")
+curve(dlnorm(x, meanlog = meanlog, sdlog = sdlog), add = TRUE, col = "red", lwd = 2)
+# p-value from the KS test is very small (< 0.05), we reject H0. This concludes Log-Normal is not a good fit for the energy data
+
+
+
+```
+##Conclusion:
+##From the histrogram, the data appears to be right skewed, ie longer tail on the right. 
+##From the qq plot, the data doesn't follow a normal distribution, based on the deviation from the extreme right and left side of the plot. 
+##We did further testing on the log transformed of national demand, and from the qq plot we can see that it still doesn't fit normal distribution.
+##Based on the right skewed feature of the data, we tried the following:
+##1. Fitting gamma distribution, as the gamma distribution is only for positive values (X>0), and tend to be used for data that are right skewed. However, from the result for ##the KS test, we see that p-value (0.002129) from the KS test is very small (< 0.05), we reject H0. This concludes Gamma is not a good fit for the energy data
+
+##2. Fitting Log Normal Distribution:
+##Log-Normal distribution is also often used for postively skewed data.
+##However from the KS test result, we reject H0. This concludes log normal is not a good fit for the energy data
+
+
+##Box Plot By Month & Year
+---
+```{r}
+#######################################################
+##########         Box Plot by Month        ##########
+#######################################################
+# Ensure date column is in Date format
+energy_data$date <- as.Date(energy_data$date)
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "Month", y = "National Demand (MW)") +
+  theme_minimal()
+
+#######################################################
+##########        Box Plot by year          ##########
+#######################################################
+
+energy_data$date <- as.Date(energy_data$date)
+energy_data$year <- factor(year(energy_data$date))
+ggplot(energy_data, aes(x = year, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Year",
+       x = "Year", y = "National Demand (MW)") +
+```
+
+
+```{r}
+
+energy_data$date <- as.Date(energy_data$date)
+
+# Define seasons
+energy_data <- energy_data %>%
+  mutate(season = case_when(
+    month(date) %in% c(12, 1, 2) ~ "Winter",
+    month(date) %in% c(3, 4, 5) ~ "Spring",
+    month(date) %in% c(6, 7, 8) ~ "Summer",
+    month(date) %in% c(9, 10, 11) ~ "Autumn"
+  ))
+
+# Compute seasonal mean and standard deviation
+seasonal_stats <- energy_data %>%
+  group_by(season) %>%
+  summarise(mean_demand = mean(national_demand, na.rm = TRUE),
+            sd_demand = sd(national_demand, na.rm = TRUE)) %>%
+  mutate(season = factor(season, levels = c("Winter", "Spring", "Summer", "Autumn")))  # Ensure correct order
+
+# Plot seasonal mean with error bars (standard deviation)
+ggplot(seasonal_stats, aes(x = season, y = mean_demand)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  geom_errorbar(aes(ymin = mean_demand - sd_demand, ymax = mean_demand + sd_demand), width = 0.2, color = "red") +
+  labs(title = "Mean and Standard Deviation of National Energy Demand by Season",
+       x = "Season", y = "National Demand (MW)") +
+  theme_minimal()
+
+
+
+```
+##The box is the mean of the energy demdn
+##We can see in both winter and autumn, there is high demand for energy
+## Winter, Spring and Autmn has the largest fluctuation of the demand (showsn by the red range)
+
+
+
+##Time Series Analysis
+---
+```{r}
+###################################      
+######    Visualize the TS    #####
+################################### 
+ts_data <- ts(energy_data$national_demand, 
+              start = c(2020, 1), 
+              frequency = 365)  
+
+ggplot(energy_data, aes(x = date, y = national_demand)) +
+  geom_line(color = "blue") +
+  labs(title = "Time Series of National Energy Demand",
+       x = "Date", 
+       y = "National Demand") +
+  theme_minimal()
+
+
+###################################      
+###### Plotting Decomposed TS #####
+###################################  
+decomposed_ts <- decompose(ts_data, type = "multiplicative")
+plot(decomposed_ts)
+mtext("Time Series Decomposition: Trend, Seasonality, and Residuals", 
+      side = 3, line = 1, outer = TRUE, cex = 1.5, font = 2)
+
+###################################      
+######## Yearly mean trend ######## 
+###################################      
+yearly_mean <- energy_data %>%
+  group_by(year) %>%
+  summarise(mean_demand = mean(national_demand))
+
+ggplot(yearly_mean, aes(x = year, y = mean_demand)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Yearly Mean National Energy Demand", 
+       x = "Year", 
+       y = "Mean Demand (MW)") +
+  theme_minimal()
+
+###################################      
+#####   Check for Stationarity ####
+################################### 
+#Augmented Dickey-Fuller Test:
+adf_test_result <- adf.test(ts_data)
+print(adf_test_result)
+
+#Given the p-value < 0.05, we reject H₀, and we conclude that time series is stationary.
+
+###################################      
+#####      Plotting MA         ####
+###################################
+energy_data <- energy_data %>%
+  mutate(ma7 = zoo::rollmean(national_demand, k = 7, fill = NA),  # 7-day moving average
+         ma30 = zoo::rollmean(national_demand, k = 30, fill = NA)) # 30-day moving average
+
+ggplot(energy_data, aes(x = date)) +
+  geom_line(aes(y = national_demand), color = "blue", alpha = 0.5) +
+  geom_line(aes(y = ma7), color = "red", size = 1) +
+  geom_line(aes(y = ma30), color = "green", size = 1) +
+  labs(title = "Moving Averages of National Energy Demand",
+       x = "Date", 
+       y = "National Demand (MW)") +
+  theme_minimal()
+
+###################################      
+#####  Plotting ACF & PACF     ####
+###################################
+acf(ts_data, main = "Autocorrelation Function (ACF) of National Demand")
+pacf(ts_data, main = "Partial Autocorrelation Function (PACF) of National Demand")
+adf.test(ts_data)  # Augmented Dickey-Fuller Test
+
+
+```
+## If we compare the over trend from the decomposition graph vs the trend of the yearly mean. The decomposition graph suggest stricly decreasing demand, while the yearly mean doesn't sugget this conclusion
+## The Graph did suggest seasonality
+## The noise graph looks completely random, where there is no patter. 
+
+##MA Graph:
+##From the original blue grpah -> we can see that there are a lot of noise, and sudden fluctuations (could be due to sudden change / requirement of energy)
+##From the red plot -> smooth out some fluctuations
+##From the green plot -> smooth out more fluctuations, and shows clear seasonality
+
+
+## Fitting SARIMA
+```{r pressure, echo=FALSE}
+##Fitting SARIMA:
+sarima_model <- auto.arima(ts_data, seasonal = TRUE, stepwise = FALSE, approximation = FALSE)
+summary(sarima_model)
+forecast_sarima <- forecast(sarima_model, h = 365)  # Forecast for next year
+autoplot(forecast_sarima)
+```
+
+
+
+
+
+
