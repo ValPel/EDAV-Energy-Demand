@@ -1,0 +1,610 @@
+---
+title: "UK Energy Demand Analysis"
+author: "MLDS Group 4"
+output: html_document
+date: "2025-03-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.asp = 1)
+
+required_packages <- c("tidyverse", 
+                      "zoo",        
+                      "forecast",   
+                      "lubridate",  
+                      "MASS",       
+                      "tseries",    
+                      "patchwork")
+
+# Load packages
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+# 1. Data Introduction and Cleaning
+
+## Loading the Data
+
+```{r}
+energy_data <- read.csv("energy_demand_uk_1.csv")
+
+# Ensure date column is Date type
+energy_data$date <- as.Date(energy_data$date)
+
+# Display data summary
+cat("Data dimensions:", nrow(energy_data), "rows,", ncol(energy_data), "columns\n")
+head(energy_data)
+summary(energy_data)
+```
+
+## Handling Missing Values
+
+```{r}
+# Check and print rows with missing values
+missing_rows <- energy_data %>% filter(if_any(everything(), is.na))
+cat("Number of missing rows:", nrow(missing_rows), "\n")
+
+# Identify which columns have missing values
+if(nrow(missing_rows) > 0) {
+  missing_cols <- colnames(missing_rows)[colSums(is.na(missing_rows)) > 0]
+  cat("Columns with missing values:", paste(missing_cols, collapse=", "), "\n")
+  
+  # View the missing rows
+  print(missing_rows)
+  
+  # Forward fill missing values
+  energy_data <- na.locf(energy_data)
+  
+  # Verify missing values have been filled
+  cat("Remaining missing values:", sum(is.na(energy_data)), "\n")
+}
+```
+
+# 2. Univariate Exploratory Data Analysis
+
+## Distribution of National Energy Demand
+
+```{r}
+# Histogram
+ggplot(energy_data, aes(x = national_demand)) +
+  geom_histogram(binwidth = 1000, fill = "blue", alpha = 0.6, color = "black") +
+  labs(title = "Distribution of National Energy Demand", x = "National Demand (MW)", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+# Boxplot
+ggplot(energy_data, aes(y = national_demand)) +
+  geom_boxplot(fill = "red", alpha = 0.5) +
+  labs(title = "Boxplot of National Energy Demand", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+```{r}
+# QQ plot
+ggplot(energy_data, aes(sample = national_demand)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Q-Q Plot of National Energy Demand") +
+  theme_minimal()
+```
+
+```{r}
+# Time series plot
+ggplot(energy_data, aes(x = date, y = national_demand)) +
+  geom_line(color = "blue") +
+  labs(title = "Time Series of National Energy Demand", 
+       x = "Date", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+## Conclusion:
+## From the histogram, the data appears to be right skewed, i.e., longer tail on the right. 
+## From the QQ plot, the data doesn't follow a normal distribution, based on the deviation from the extreme right and left side of the plot. 
+## The national demand data does not follow normal distribution.
+## So in the following steps, let's try some transformation, to see if the data can follow normal distribution after transformation.
+
+## Testing Different Distributions
+
+```{r}
+# QQ plot for log-transformed data
+ggplot(energy_data, aes(sample = log(national_demand))) +
+  geom_qq() +
+  geom_qq_line(color = "red") +
+  labs(title = "Q-Q Plot of Log-Transformed National Demand")
+```
+
+```{r}
+# Fitting Gamma Distribution
+fit_gamma <- fitdistr(energy_data$national_demand, "gamma")
+print(fit_gamma)  
+```
+```{r}
+shape_param <- fit_gamma$estimate["shape"]
+rate_param <- fit_gamma$estimate["rate"]
+
+# Plot histogram with gamma density using ggplot2 approach
+ggplot(energy_data, aes(x = national_demand)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  stat_function(fun = dgamma, args = list(shape = shape_param, rate = rate_param),
+                color = "red", linewidth = 1) +
+  labs(title = "Gamma Fit on National Demand", x = "National Demand (MW)", y = "Density") +
+  theme_minimal()
+```
+
+```{r}
+# KS test for Gamma fit
+ks_gamma <- ks.test(energy_data$national_demand, "pgamma", shape_param, rate_param)
+print(ks_gamma)
+```
+```{r}
+# Fitting Log Normal Distribution
+fit_lognormal <- fitdistr(energy_data$national_demand, "lognormal")
+print(fit_lognormal)
+```
+```{r}
+meanlog <- fit_lognormal$estimate["meanlog"]
+sdlog <- fit_lognormal$estimate["sdlog"]
+
+# KS test for Log-Normal fit
+ks_lognormal <- ks.test(energy_data$national_demand, "plnorm", meanlog, sdlog)
+print(ks_lognormal)
+```
+```{r}
+# Plot histogram with log-normal density using ggplot2 approach
+ggplot(energy_data, aes(x = national_demand)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  stat_function(fun = dlnorm, args = list(meanlog = meanlog, sdlog = sdlog),
+                color = "red", linewidth = 1) +
+  labs(title = "Log-Normal Fit on National Demand", x = "National Demand (MW)", y = "Density") +
+  theme_minimal()
+```
+
+## Conclusion:
+## From the histogram, the data appears to be right skewed, i.e., longer tail on the right. 
+## From the QQ plot, the data doesn't follow a normal distribution, based on the deviation from the extreme right and left side of the plot. 
+## We did further testing on the log transformed of national demand, and from the QQ plot we can see that it still doesn't fit normal distribution.
+## Based on the right skewed feature of the data, we tried the following:
+## 1. Fitting gamma distribution, as the gamma distribution is only for positive values (X>0), and tend to be used for data that are right skewed. However, from the result for the KS test, we see that p-value (0.002129) from the KS test is very small (< 0.05), we reject H0. This concludes Gamma is not a good fit for the energy data.
+## 2. Fitting Log Normal Distribution:
+## Log-Normal distribution is also often used for positively skewed data.
+## However from the KS test result, we reject H0. This concludes log normal is not a good fit for the energy data.
+
+## Distribution by Month and Year
+
+```{r}
+# Boxplot by Month
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "Month", y = "National Demand (MW)") +
+  theme_minimal()
+```
+```{r}
+# Boxplot by Year
+energy_data$year <- factor(year(energy_data$date))
+ggplot(energy_data, aes(x = year, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Year",
+       x = "Year", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+## Seasonal Analysis
+
+```{r}
+# Define seasons
+energy_data <- energy_data %>%
+  mutate(season = case_when(
+    month(date) %in% c(12, 1, 2) ~ "Winter",
+    month(date) %in% c(3, 4, 5) ~ "Spring",
+    month(date) %in% c(6, 7, 8) ~ "Summer",
+    month(date) %in% c(9, 10, 11) ~ "Autumn"
+  ))
+
+# Ensure correct order of seasons
+energy_data$season <- factor(energy_data$season, 
+                            levels = c("Winter", "Spring", "Summer", "Autumn"))
+
+# Compute seasonal mean and standard deviation
+seasonal_stats <- energy_data %>%
+  group_by(season) %>%
+  summarise(mean_demand = mean(national_demand, na.rm = TRUE),
+            sd_demand = sd(national_demand, na.rm = TRUE))
+
+# Plot seasonal mean with error bars (standard deviation)
+ggplot(seasonal_stats, aes(x = season, y = mean_demand)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  geom_errorbar(aes(ymin = mean_demand - sd_demand, ymax = mean_demand + sd_demand), 
+                width = 0.2, color = "red") +
+  labs(title = "Mean and Standard Deviation of National Energy Demand by Season",
+       x = "Season", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+## Conclusion:
+## The bar plot represents the mean of the energy demand.
+## We can see in both winter and autumn, there is high demand for energy.
+## Winter, Spring and Autumn have the largest fluctuation of the demand (shown by the red error bars).
+
+## Time Series Analysis
+
+```{r}
+# Create time series object
+ts_data <- ts(energy_data$national_demand, 
+              start = c(2020, 1), 
+              frequency = 365)  
+
+# Time series plot with ggplot2
+ggplot(energy_data, aes(x = date, y = national_demand)) +
+  geom_line(color = "blue") +
+  labs(title = "Time Series of National Energy Demand",
+       x = "Date", 
+       y = "National Demand") +
+  theme_minimal()
+```
+```{r}
+# Decompose time series
+decomposed_ts <- decompose(ts_data, type = "multiplicative")
+
+# Plot the decomposition
+plot(decomposed_ts)
+```
+```{r}
+# Yearly mean trend
+yearly_mean <- energy_data %>%
+  group_by(year) %>%
+  summarise(mean_demand = mean(national_demand))
+
+ggplot(yearly_mean, aes(x = year, y = mean_demand)) +
+  geom_line(group = 1) +
+  geom_point() +
+  labs(title = "Yearly Mean National Energy Demand", 
+       x = "Year", 
+       y = "Mean Demand (MW)") +
+  theme_minimal()
+```
+```{r}
+# Check for Stationarity with Augmented Dickey-Fuller Test
+adf_test_result <- adf.test(ts_data)
+print(adf_test_result)
+```
+```{r}
+# Moving averages
+energy_data <- energy_data %>%
+  mutate(ma7 = zoo::rollmean(national_demand, k = 7, fill = NA),  # 7-day moving average
+         ma30 = zoo::rollmean(national_demand, k = 30, fill = NA)) # 30-day moving average
+
+ggplot(energy_data, aes(x = date)) +
+  geom_line(aes(y = national_demand), color = "blue", alpha = 0.5) +
+  geom_line(aes(y = ma7), color = "red", size = 1) +
+  geom_line(aes(y = ma30), color = "green", size = 1) +
+  labs(title = "Moving Averages of National Energy Demand",
+       x = "Date", 
+       y = "National Demand (MW)") +
+  theme_minimal()
+```
+```{r}
+# ACF and PACF
+acf(ts_data, main = "Autocorrelation Function (ACF) of National Demand")
+```
+```{r}
+pacf(ts_data, main = "Partial Autocorrelation Function (PACF) of National Demand")
+```
+
+## Conclusion:
+## If we compare the overall trend from the decomposition graph vs the trend of the yearly mean, the decomposition graph suggests strictly decreasing demand, while the yearly mean doesn't suggest this conclusion.
+## The decomposition graph did suggest seasonality.
+## The noise graph looks completely random, where there is no pattern.
+## Given the p-value < 0.05 from the ADF test, we reject H₀, and we conclude that the time series is stationary.
+
+## Moving Average Analysis:
+## From the original blue graph -> we can see that there are a lot of noise, and sudden fluctuations (could be due to sudden change / requirement of energy).
+## From the red plot (7-day MA) -> smooths out some fluctuations.
+## From the green plot (30-day MA) -> smooths out more fluctuations, and shows clear seasonality.
+
+## SARIMA Model Fitting
+
+```{r}
+# Fit SARIMA model
+sarima_model <- auto.arima(ts_data, seasonal = TRUE, 
+                          stepwise = FALSE, approximation = FALSE)
+summary(sarima_model)
+
+# Forecast
+forecast_sarima <- forecast(sarima_model, h = 365)  # Forecast for next year
+autoplot(forecast_sarima)
+```
+
+# 3. Multivariate Exploratory Data Analysis
+
+## Time Series of All Variables
+
+```{r, fig.width=12, fig.height=15, message=FALSE, warning=FALSE}
+# Variables to exclude
+exclude_cols <- c("national_demand", "date", "month", "year", "season", "ma7", "ma30")
+
+# Identify columns to analyze
+columns_to_consider <- setdiff(names(energy_data), exclude_cols)
+
+# MA time window
+MA_TIME <- 30
+
+# Create list of ggplots
+plot_list <- lapply(columns_to_consider, function(col) {
+  ggplot(energy_data, aes(x = date, y = .data[[col]])) +
+    geom_line(color = "blue", linewidth = 0.8) +
+    geom_line(aes(y = rollmean(.data[[col]], k=MA_TIME, fill = NA)), 
+              color = "red", linewidth = 0.8) +
+    labs(title = col, x = "Date", y = col) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 8))
+})
+
+# Combine all plots into a grid layout
+combined_plot <- wrap_plots(plot_list, ncol = 2) +
+  plot_annotation(title = "Time Series with 30-Day Moving Average")
+
+# Print the combined plot
+print(combined_plot)
+```
+
+## Correlation Analysis
+
+```{r}
+# Calculate Spearman correlation for original features
+correlations <- sapply(energy_data[columns_to_consider], 
+                       function(column) cor(column, energy_data$national_demand, 
+                                           method = "spearman", 
+                                           use = "complete.obs"))
+
+# Display correlations
+print(correlations)
+```
+```{r}
+# Convert correlations to data frame for plotting
+correlations_df <- data.frame(
+  feature = names(correlations),
+  correlation = as.numeric(correlations)
+)
+
+# Plot correlations
+ggplot(correlations_df, aes(x = correlation, y = reorder(feature, correlation))) +
+  geom_bar(stat = "identity", fill = "salmon") +
+  theme_minimal() +
+  labs(
+    title = "Correlation with National Demand (Original Features)",
+    x = "Correlation",
+    y = ""
+  ) +
+  theme(
+    axis.text.y = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  )
+```
+## Plot national_demand against Original Features
+```{r, fig.width=20, fig.height=12, message=FALSE, warning=FALSE}
+# Create list of plots
+plot_list <- lapply(columns_to_consider, function(col) {
+  ggplot(ed, aes(x = .data[[col]], y = national_demand)) +
+    geom_point(color = "black", alpha = 0.5) +  # Scatter plot
+    geom_smooth(color = "red", method = "loess", se = FALSE) +  # Smooth trend line
+    labs(title = paste(col),
+         x = col,
+         y = "National Demand") +
+    theme_minimal()
+})
+
+# Combine all plots into a grid using patchwork
+combined_plot <- wrap_plots(plot_list, ncol = 2) +
+  plot_annotation(title = "National Demand vs Features")
+
+# Show the combined plot
+print(combined_plot)
+
+```
+## Feature Engineering
+
+```{r}
+# Add engineered features
+energy_data <- energy_data %>%
+  mutate(
+    avg_temp = (min_temp + max_temp) / 2,
+    day_of_year = yday(date),
+    annual_cos = cos(2 * pi * day_of_year / 365),
+    HDD = pmax(15.5 - avg_temp, 0),  # Heating Degree Days (base 15.5°C)
+    
+    # Lag features
+    demand_lag1 = lag(national_demand, 1),
+    demand_lag2 = lag(national_demand, 2),
+    demand_lag7 = lag(national_demand, 7),
+    demand_lag365 = lag(national_demand, 365),
+    
+    # Moving averages
+    demand_ma7 = if("ma7" %in% names(energy_data)) ma7 else 
+                 rollmean(national_demand, k = 7, fill = NA, align = "right"),
+    demand_ma30 = if("ma30" %in% names(energy_data)) ma30 else 
+                  rollmean(national_demand, k = 30, fill = NA, align = "right"),
+    demand_ma365 = rollmean(national_demand, k = 365, fill = NA, align = "right"),
+    
+    # Renewable energy ratio
+    renewable_log_diff = log(wind_generation + 1) - log(solar_generation + 1)
+  )
+
+# Identify original and engineered features
+original_features <- c("wind_generation", "solar_generation", "min_temp", 
+                     "max_temp", "rain_mm", "wind_speed", "average_price_daily")
+
+# Get all numeric column names
+all_numeric_names <- names(select_if(energy_data, is.numeric))
+
+# Create engineered features list (excluding national_demand and original features)
+engineered_features <- setdiff(all_numeric_names, 
+                             c("national_demand", original_features))
+
+# Calculate correlations with national demand
+numeric_cols <- energy_data %>% 
+  select_if(is.numeric) %>%
+  select_at(vars(-national_demand))
+
+all_correlations <- data.frame(
+  term = names(numeric_cols),
+  correlation = sapply(numeric_cols, function(x) 
+                      cor(x, energy_data$national_demand, use = "pairwise.complete.obs"))
+) %>%
+  # Add feature type
+  mutate(feature_type = case_when(
+    term %in% original_features ~ "Original",
+    term %in% engineered_features ~ "Engineered",
+    TRUE ~ "Other"
+  ))
+
+# Filter for strong correlations (|r| > 0.5)
+strong_correlations <- all_correlations %>%
+  filter(!is.na(correlation) & abs(correlation) > 0.5) %>%
+  arrange(desc(abs(correlation)))
+
+# Plot strong correlations
+ggplot(strong_correlations, 
+       aes(x = reorder(term, abs(correlation)), 
+           y = correlation, 
+           fill = feature_type)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Strong Correlations with National Demand", 
+       x = "Features", 
+       y = "Correlation",
+       fill = "Feature Type") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2")
+```
+
+## Partial Dependence Plots
+
+```{r, fig.width=12, fig.height=10, message=FALSE, warning=FALSE}
+# Select key variables for partial dependence
+demand_dependence_vars <- c("national_demand", 
+                           "annual_cos", 
+                           "HDD", 
+                           "demand_lag1", 
+                           "demand_lag7", 
+                           "demand_lag365", 
+                           "renewable_log_diff")
+
+# Prepare data
+plot_data <- energy_data %>%
+  dplyr::select(all_of(demand_dependence_vars)) %>%
+  na.omit()
+
+create_partial_dependence_plot <- function(feature) {
+  ggplot(plot_data, aes_string(x = feature, y = "national_demand")) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "loess", color = "red", se = TRUE) +
+    labs(title = paste("Partial Dependence Plot:", feature),
+         x = feature,
+         y = "National Demand") +
+    theme_minimal()
+}
+
+partial_plots <- lapply(setdiff(demand_dependence_vars, "national_demand"), 
+                      create_partial_dependence_plot)
+combined_partial_plots <- wrap_plots(partial_plots, ncol = 2)
+print(combined_partial_plots)
+```
+
+## Confounding Effect: Solar Generation vs. Temperature
+
+## It can be seen that Solar generation correlates to demand, but is it causality?
+## Because temperature correlates strongly not only with demand, but also with 
+## solar_generation, it is a confounder. In fact, demand is seasonal and is not
+## affected by how much solar power is generated.
+
+```{r, message=FALSE, warning=FALSE}
+# Calculate correlation between solar generation and max temperature
+solar_temp_corr <- cor(energy_data$solar_generation, energy_data$max_temp, 
+                     method = "spearman", use = "complete.obs")
+cat("Correlation between solar generation and max temperature:", solar_temp_corr, "\n")
+```
+```{r, message=FALSE, warning=FALSE}
+# Plot Solar Generation vs. Temperature
+ggplot(energy_data, aes(x = solar_generation, y = max_temp)) +
+  geom_point(color = "black", alpha = 0.6) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(
+    title = "Solar Generation vs. Max Temperature",
+    x = "Solar Generation (MW)",
+    y = "Max Temperature (°C)"
+  ) +
+  theme_minimal()
+```
+
+## Daily Temperature Variation Effect
+
+```{r, message=FALSE, warning=FALSE}
+# Calculate avg_temp_ma_30 (if not already created)
+if(!"avg_temp_ma" %in% names(energy_data)) {
+  energy_data <- energy_data %>%
+    mutate(avg_temp_ma = rollmean(avg_temp, k = 30, fill = NA, align = "right"))
+}
+
+# Calculate daily temperature variation
+if(!"dail_variation_avg_temp" %in% names(energy_data)) {
+  energy_data <- energy_data %>%
+    mutate(dail_variation_avg_temp = avg_temp - avg_temp_ma)
+}
+
+# Define temperature thresholds
+cold_threshold <- 5
+hot_threshold <- 13
+
+# Create temperature segments
+energy_data <- energy_data %>%
+  mutate(day_type = case_when(
+    min_temp < cold_threshold ~ "cold_day",
+    min_temp >= cold_threshold & min_temp < hot_threshold ~ "mild_day",
+    TRUE ~ "hot_day"
+  ))
+
+# Calculate correlations by segment
+cold_days <- energy_data %>% filter(min_temp < cold_threshold)
+mild_days <- energy_data %>% filter(min_temp >= cold_threshold & min_temp < hot_threshold)
+hot_days <- energy_data %>% filter(min_temp >= hot_threshold)
+
+# Calculate correlations of demand vs temperature variation by segment
+cat("Correlation in cold days:", 
+    cor(cold_days$dail_variation_avg_temp, cold_days$national_demand, 
+        method="spearman", use="complete.obs"), "\n")
+
+cat("Correlation in mild days:", 
+    cor(mild_days$dail_variation_avg_temp, mild_days$national_demand, 
+        method="pearson", use="complete.obs"), "\n")
+
+cat("Correlation in hot days:", 
+    cor(hot_days$dail_variation_avg_temp, hot_days$national_demand, 
+        method="spearman", use="complete.obs"), "\n")
+
+# Plot daily variations correlation to demand by temperature segment
+ggplot(energy_data, aes(x = dail_variation_avg_temp, y = national_demand, color = day_type)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "National Demand vs Daily Variations in Average Temperature",
+    x = "Daily Variations in Average Temperature (°C)",
+    y = "National Demand (MW)"
+  ) +
+  scale_color_manual(values = c(
+    "cold_day" = "blue", "mild_day" = "green", "hot_day" = "red"),
+    name = "Temperature\nSegment") +
+  theme_minimal()
+```
+
+## During cold periods, daily temperature drops cause demand to increase. During mild and hot days, this behavior is not seen.
