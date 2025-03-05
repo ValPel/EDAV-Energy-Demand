@@ -196,6 +196,39 @@ ggplot(energy_data, aes(x = year, y = national_demand)) +
   theme_minimal()
 ```
 
+## Added to the report
+
+```{r}
+#charts combinations
+
+dens <- ggplot(energy_data) +
+  geom_density(aes(x = national_demand, y = after_stat(density)),fill = "blue", alpha = 0.6, color = "black") +
+  labs(title = "Distribution", x = "National Demand (MW)") +
+  theme_minimal()
+
+bplot <- ggplot(energy_data, aes(y = national_demand)) +
+  geom_boxplot(fill = "red", alpha = 0.5) +
+  labs(title = "Boxplot", y = "National Demand (MW)") +
+  theme_minimal()
+
+qplot <- ggplot(energy_data, aes(sample = national_demand)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(title = "Q-Q Plot") +
+  theme_minimal()
+
+ts <- ggplot(energy_data, aes(x = date, y = national_demand)) +
+  geom_line(color = "blue") +
+  labs(title = "Time Series", 
+       x = "Date", y = "National Demand (MW)") +
+  theme_minimal()
+
+(dens | bplot) / (qplot | ts)
+
+```
+
+
+
 ## Seasonal Analysis
 
 ```{r}
