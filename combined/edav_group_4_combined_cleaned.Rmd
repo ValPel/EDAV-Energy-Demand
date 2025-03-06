@@ -674,3 +674,70 @@ ggplot(energy_data, aes(x = dail_variation_avg_temp, y = national_demand, color 
 ```
 
 ## During cold periods, daily temperature drops cause demand to increase. During mild and hot days, this behavior is not seen.
+
+## PART 4 DATA VISUALISATION
+
+#Pair Plot
+```{r, message=FALSE, warning=FALSE}
+library(ggExtra)
+library(GGally)
+library(reshape2)
+
+ggpairs(data = energy_data,
+        columns = c(3:10),na.rm = TRUE)
+```
+
+## HEATMAP
+```{r, message=FALSE, warning=FALSE}
+corrmat <- cor(energy_data[3:10])
+df_corrmat <- melt(corrmat,na.rm = TRUE)
+
+corr_heatmap <- ggplot(df_corrmat, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 4) +  
+  theme_minimal() +
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+corr_heatmap
+```
+
+##parallel coordinate plot
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+ggparcoord(data = energy_data, 
+           columns = c(3:10),  # Select numeric columns to plot
+           scale = "std",  # Standardizes variables
+           groupColumn = "month",
+           alphaLines = 0.5) +  # Adjust transparency
+  labs(title = "Parallel Coordinate Plot of Energy data", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggparcoord(data = energy_data, 
+           columns = c(3:10),  # Select numeric columns to plot
+           scale = "std",  # Standardizes variables
+           groupColumn = "year",
+           alphaLines = 0.5) +  # Adjust transparency
+  labs(title = "Parallel Coordinate Plot of Energy data", x="")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Boxplot/Violin plot Monthly split - seasonality
+```{r, message=FALSE, warning=FALSE}
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "", y = "National Demand (MW)") +
+  theme_minimal()
+
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_violin(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+
