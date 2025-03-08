@@ -198,7 +198,7 @@ ggplot(energy_data, aes(x = year, y = national_demand)) +
 
 ## Added to the report 1
 
-```{r}
+```{r, fig.width=12, fig.height=7, message=FALSE, warning=FALSE}
 #charts combinations
 
 dens <- ggplot(energy_data) +
@@ -217,11 +217,22 @@ qplot <- ggplot(energy_data, aes(sample = national_demand)) +
   labs(title = "Q-Q Plot") +
   theme_minimal()
 
-ts <- ggplot(energy_data, aes(x = date, y = national_demand)) +
-  geom_line(color = "blue") +
-  labs(title = "Time Series", 
-       x = "Date", y = "National Demand (MW)") +
+# Moving averages
+energy_data <- energy_data %>%
+  mutate(ma7 = zoo::rollmean(national_demand, k = 7, fill = NA),  # 7-day moving average
+         ma30 = zoo::rollmean(national_demand, k = 30, fill = NA), # 30-day moving average
+         ma365 = zoo::rollmean(national_demand, k = 365, fill = NA)) # 365-day moving average
+
+ts <- ggplot(energy_data, aes(x = date)) +
+  geom_line(aes(y = national_demand), color = "blue", alpha = 0.5) +
+  geom_line(aes(y = ma7), color = "red", size = 1) +
+  geom_line(aes(y = ma30), color = "green", size = 1) +
+  geom_line(aes(y = ma365), color = "orange", size = 1) +
+  labs(title = "Moving Averages of National Energy Demand",
+       x = "Date", 
+       y = "National Demand (MW)") +
   theme_minimal()
+
 
 (dens | bplot) / (qplot | ts)
 
