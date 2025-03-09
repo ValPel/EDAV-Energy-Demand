@@ -31,7 +31,7 @@ for (pkg in required_packages) {
 ## Loading the Data
 
 ```{r}
-energy_data <- read.csv("energy_demand_uk_1.csv")
+energy_data <- read.csv("energy_demand_uk.csv")
 
 # Ensure date column is Date type
 energy_data$date <- as.Date(energy_data$date)
