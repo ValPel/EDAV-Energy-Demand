@@ -195,10 +195,12 @@ ggplot(energy_data, aes(x = year, y = national_demand)) +
        x = "Year", y = "National Demand (MW)") +
   theme_minimal()
 ```
+##########################################################################################################################################################
+##########################################################################################################################################################
 
 ## Added to the report 1
 
-```{r, fig.width=12, fig.height=7, message=FALSE, warning=FALSE}
+``````{r, fig.width=18, fig.height=5, message=FALSE, warning=FALSE}
 #charts combinations
 
 dens <- ggplot(energy_data) +
@@ -211,12 +213,6 @@ bplot <- ggplot(energy_data, aes(y = national_demand)) +
   labs(title = "Boxplot", y = "National Demand (MW)") +
   theme_minimal()
 
-qplot <- ggplot(energy_data, aes(sample = national_demand)) +
-  geom_qq() +
-  geom_qq_line() +
-  labs(title = "Q-Q Plot") +
-  theme_minimal()
-
 # Moving averages
 energy_data <- energy_data %>%
   mutate(ma7 = zoo::rollmean(national_demand, k = 7, fill = NA),  # 7-day moving average
@@ -224,21 +220,47 @@ energy_data <- energy_data %>%
          ma365 = zoo::rollmean(national_demand, k = 365, fill = NA)) # 365-day moving average
 
 ts <- ggplot(energy_data, aes(x = date)) +
-  geom_line(aes(y = national_demand), color = "blue", alpha = 0.5) +
-  geom_line(aes(y = ma7), color = "red", size = 1) +
-  geom_line(aes(y = ma30), color = "green", size = 1) +
-  geom_line(aes(y = ma365), color = "orange", size = 1) +
+  geom_line(aes(y = national_demand, color = "National Demand"), alpha = 0.5) +
+  geom_line(aes(y = ma7, color = "7-Day MA"), size = 1) +
+  geom_line(aes(y = ma30, color = "30-Day MA"), size = 1) +
+  geom_line(aes(y = ma365, color = "365-Day MA"), size = 1) +
   labs(title = "Moving Averages of National Energy Demand",
        x = "Date", 
-       y = "National Demand (MW)") +
-  theme_minimal()
+       y = "National Demand (MW)", 
+       color = "Legend") +  # Add legend title
+  scale_color_manual(values = c("National Demand" = "blue", 
+                                "7-Day MA" = "red", 
+                                "30-Day MA" = "green", 
+                                "365-Day MA" = "orange")) +
+  theme_minimal()+
+  theme(legend.position = "bottom")
 
 
-(dens | bplot) / (qplot | ts)
+(dens | bplot | ts)
 
 ```
 
+## Added to the report 2
 
+# Boxplot/Violin plot Monthly split - seasonality
+```{r,fig.width=12, fig.height=7, message=FALSE, warning=FALSE}
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "", y = "National Demand (MW)") +
+  theme_minimal()
+
+energy_data$month <- factor(month(energy_data$date, label = TRUE), levels = month.abb)
+ggplot(energy_data, aes(x = month, y = national_demand)) +
+  geom_violin(fill = "lightblue", color = "black") +
+  labs(title = "Distribution of National Energy Demand by Month",
+       x = "", y = "National Demand (MW)") +
+  theme_minimal()
+```
+
+##########################################################################################################################################################
+##########################################################################################################################################################
 
 ## Seasonal Analysis
 
@@ -713,6 +735,9 @@ corr_heatmap <- ggplot(df_corrmat, aes(x = Var1, y = Var2, fill = value)) +
 
 corr_heatmap
 ```
+##########################################################################################################################################################
+##########################################################################################################################################################
+#Added to the report 3
 
 ##parallel coordinate plot
 ```{r, message=FALSE, warning=FALSE}
@@ -733,6 +758,9 @@ ggparcoord(data = energy_data,
   labs(title = "Parallel Coordinate Plot of Energy data", x="")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+##########################################################################################################################################################
+##########################################################################################################################################################
 
 # Boxplot/Violin plot Monthly split - seasonality
 ```{r, message=FALSE, warning=FALSE}
