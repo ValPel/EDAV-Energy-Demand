@@ -722,7 +722,7 @@ ggpairs(data = energy_data,
 
 ## HEATMAP
 ```{r, message=FALSE, warning=FALSE}
-corrmat <- cor(energy_data[3:10])
+corrmat <- cor(energy_data[3:10],use = "complete.obs")
 df_corrmat <- melt(corrmat,na.rm = TRUE)
 
 corr_heatmap <- ggplot(df_corrmat, aes(x = Var1, y = Var2, fill = value)) +
