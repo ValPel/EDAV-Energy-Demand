@@ -15,7 +15,10 @@ required_packages <- c("tidyverse",
                       "lubridate",  
                       "MASS",       
                       "tseries",    
-                      "patchwork")
+                      "patchwork",
+                      "ggExtra",
+                      "GGally",
+                      "reshape2")
 
 # Load packages
 for (pkg in required_packages) {
@@ -31,7 +34,7 @@ for (pkg in required_packages) {
 ## Loading the Data
 
 ```{r}
-energy_data <- read.csv("energy_demand_uk.csv")
+energy_data <- read.csv("../energy_demand_uk.csv")
 
 # Ensure date column is Date type
 energy_data$date <- as.Date(energy_data$date)
@@ -170,7 +173,7 @@ ggplot(energy_data, aes(x = national_demand)) +
 ## From the QQ plot, the data doesn't follow a normal distribution, based on the deviation from the extreme right and left side of the plot. 
 ## We did further testing on the log transformed of national demand, and from the QQ plot we can see that it still doesn't fit normal distribution.
 ## Based on the right skewed feature of the data, we tried the following:
-## 1. Fitting gamma distribution, as the gamma distribution is only for positive values (X>0), and tend to be used for data that are right skewed. However, from the result for the KS test, we see that p-value (0.002129) from the KS test is very small (< 0.05), we reject H0. This concludes Gamma is not a good fit for the energy data.
+## 1. Fitting gamma distribution, as the gamma distribution is only for positive values (X>0), and tend to be used for data that are right skewed. However, from the result for the KS test, we see that p-value from the KS test is very small (< 0.05), we reject H0. This concludes Gamma is not a good fit for the energy data.
 ## 2. Fitting Log Normal Distribution:
 ## Log-Normal distribution is also often used for positively skewed data.
 ## However from the KS test result, we reject H0. This concludes log normal is not a good fit for the energy data.
@@ -379,13 +382,13 @@ pacf(ts_data, main = "Partial Autocorrelation Function (PACF) of National Demand
 
 ```{r}
 # Fit SARIMA model
-sarima_model <- auto.arima(ts_data, seasonal = TRUE, 
-                          stepwise = FALSE, approximation = FALSE)
-summary(sarima_model)
+#sarima_model <- auto.arima(ts_data, seasonal = TRUE, 
+#                          stepwise = FALSE, approximation = FALSE)
+#summary(sarima_model)
 
 # Forecast
-forecast_sarima <- forecast(sarima_model, h = 365)  # Forecast for next year
-autoplot(forecast_sarima)
+#forecast_sarima <- forecast(sarima_model, h = 365)  # Forecast for next year
+#autoplot(forecast_sarima)
 ```
 ## Added to the report 2
 
@@ -494,7 +497,7 @@ ggplot(correlations_df, aes(x = correlation, y = reorder(feature, correlation)))
 ```{r, fig.width=20, fig.height=12, message=FALSE, warning=FALSE}
 # Create list of plots
 plot_list <- lapply(columns_to_consider, function(col) {
-  ggplot(ed, aes(x = .data[[col]], y = national_demand)) +
+  ggplot(energy_data, aes(x = .data[[col]], y = national_demand)) +
     geom_point(color = "black", alpha = 0.5) +  # Scatter plot
     geom_smooth(color = "red", method = "loess", se = FALSE) +  # Smooth trend line
     labs(title = paste(col),
@@ -538,7 +541,12 @@ energy_data <- energy_data %>%
     # Renewable energy ratio
     renewable_log_diff = log(wind_generation + 1) - log(solar_generation + 1)
   )
-
+if("ma7" %in% names(energy_data)) {
+  energy_data <- energy_data %>% dplyr::select(-ma7)
+}
+if("ma30" %in% names(energy_data)) {
+  energy_data <- energy_data %>% dplyr::select(-ma30)
+}
 # Identify original and engineered features
 original_features <- c("wind_generation", "solar_generation", "min_temp", 
                      "max_temp", "rain_mm", "wind_speed", "average_price_daily")
@@ -712,10 +720,8 @@ ggplot(energy_data, aes(x = dail_variation_avg_temp, y = national_demand, color 
 
 #Pair Plot
 ```{r, message=FALSE, warning=FALSE}
-library(ggExtra)
-library(GGally)
-library(reshape2)
-
+temp_file <- tempfile(fileext = ".png")
+png(temp_file)
 ggpairs(data = energy_data,
         columns = c(3:10),na.rm = TRUE)
 ```
@@ -741,7 +747,6 @@ corr_heatmap
 
 ##parallel coordinate plot
 ```{r, message=FALSE, warning=FALSE}
-library(GGally)
 ggparcoord(data = energy_data, 
            columns = c(3:10),  # Select numeric columns to plot
            scale = "std",  # Standardizes variables
