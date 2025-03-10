@@ -1,8 +1,10 @@
 ---
 title: "UK Energy Demand Analysis"
 author: "MLDS Group 4"
-output: html_document
 date: "2025-03-03"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -203,7 +205,7 @@ ggplot(energy_data, aes(x = year, y = national_demand)) +
 
 ## Added to the report 1
 
-``````{r, fig.width=18, fig.height=5, message=FALSE, warning=FALSE}
+```{r, fig.width=18, fig.height=5, message=FALSE, warning=FALSE}
 #charts combinations
 
 dens <- ggplot(energy_data) +
@@ -371,7 +373,7 @@ pacf(ts_data, main = "Partial Autocorrelation Function (PACF) of National Demand
 ## If we compare the overall trend from the decomposition graph vs the trend of the yearly mean, the decomposition graph suggests strictly decreasing demand, while the yearly mean doesn't suggest this conclusion.
 ## The decomposition graph did suggest seasonality.
 ## The noise graph looks completely random, where there is no pattern.
-## Given the p-value < 0.05 from the ADF test, we reject H₀, and we conclude that the time series is stationary.
+## Given the p-value < 0.05 from the ADF test, we reject H0, and we conclude that the time series is stationary.
 
 ## Moving Average Analysis:
 ## From the original blue graph -> we can see that there are a lot of noise, and sudden fluctuations (could be due to sudden change / requirement of energy).
