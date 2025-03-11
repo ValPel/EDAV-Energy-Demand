@@ -12,10 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(fig.asp = 1)
 
 required_packages <- c("tidyverse", 
-                      "zoo",        
+                      "zoo",   
+                      "xts",
                       "forecast",   
                       "lubridate",  
-                      "MASS",       
+                      "MASS",
                       "tseries",    
                       "patchwork",
                       "ggExtra",
@@ -432,7 +433,7 @@ ts_month <- ggplot(month_year_mean, aes(x = date, y = mean_demand)) +
 
 ```{r, fig.width=12, fig.height=15, message=FALSE, warning=FALSE}
 # Variables to exclude
-exclude_cols <- c("national_demand", "date", "month", "year", "season", "ma7", "ma30")
+exclude_cols <- c("ma365","X","national_demand", "date", "month", "year", "season", "ma7", "ma30")
 
 # Identify columns to analyze
 columns_to_consider <- setdiff(names(energy_data), exclude_cols)
